@@ -111,7 +111,11 @@ router.post('/login', async (req, res) => {
 router.get('/me', authMiddleware, async (req, res) => {
   try {
     const result = await pool.query(
-      'SELECT id, nome, email, tipo FROM users WHERE id = $1',
+      `SELECT 
+        id, nome, email, tipo, cpf, cep, street, neighborhood, city, state,
+        number, complement, phone, birth_date
+       FROM users
+       WHERE id = $1`,
       [req.userId]
     );
 
@@ -130,22 +134,136 @@ router.get('/me', authMiddleware, async (req, res) => {
   }
 });
 
-// LISTAR USUÁRIOS
-router.get('/', async (req, res) => {
+// ATUALIZAR PERFIL DO USUÁRIO LOGADO
+router.put('/me', authMiddleware, async (req, res) => {
   try {
-    const result = await pool.query(
-      'SELECT id, nome, email, tipo FROM users ORDER BY id ASC'
+    const {
+      nome,
+      email,
+      cpf,
+      cep,
+      street,
+      neighborhood,
+      city,
+      state,
+      number,
+      complement,
+      phone,
+      birthDate,
+      currentPassword,
+      newPassword,
+    } = req.body;
+
+    const userResult = await pool.query(
+      'SELECT * FROM users WHERE id = $1',
+      [req.userId]
     );
 
-    res.json(result.rows);
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({
+        message: 'Usuário não encontrado.',
+      });
+    }
+
+    const user = userResult.rows[0];
+
+    const finalNome = nome ?? user.nome;
+    const finalEmail = email ?? user.email;
+    const finalCpf = cpf ?? user.cpf;
+    const finalCep = cep ?? user.cep;
+    const finalStreet = street ?? user.street;
+    const finalNeighborhood = neighborhood ?? user.neighborhood;
+    const finalCity = city ?? user.city;
+    const finalState = state ?? user.state;
+    const finalNumber = number ?? user.number;
+    const finalComplement = complement ?? user.complement;
+    const finalPhone = phone ?? user.phone;
+    const finalBirthDate = birthDate ?? user.birth_date;
+
+    if (finalEmail !== user.email) {
+      const emailJaExiste = await pool.query(
+        'SELECT id FROM users WHERE email = $1 AND id <> $2',
+        [finalEmail, req.userId]
+      );
+
+      if (emailJaExiste.rows.length > 0) {
+        return res.status(400).json({
+          message: 'Este e-mail já está sendo utilizado.',
+        });
+      }
+    }
+
+    let finalSenha = user.senha;
+
+    if (newPassword) {
+      if (!currentPassword) {
+        return res.status(400).json({
+          message: 'Informe a senha atual para alterar a senha.',
+        });
+      }
+
+      const senhaCorreta = await bcrypt.compare(currentPassword, user.senha);
+
+      if (!senhaCorreta) {
+        return res.status(401).json({
+          message: 'A senha atual está incorreta.',
+        });
+      }
+
+      finalSenha = await bcrypt.hash(newPassword, 10);
+    }
+
+    const result = await pool.query(
+      `UPDATE users SET
+        nome = $1,
+        email = $2,
+        cpf = $3,
+        cep = $4,
+        street = $5,
+        neighborhood = $6,
+        city = $7,
+        state = $8,
+        number = $9,
+        complement = $10,
+        phone = $11,
+        birth_date = $12,
+        senha = $13
+      WHERE id = $14
+      RETURNING
+        id, nome, email, tipo, cpf, cep, street, neighborhood, city, state,
+        number, complement, phone, birth_date`,
+      [
+        finalNome,
+        finalEmail,
+        finalCpf,
+        finalCep,
+        finalStreet,
+        finalNeighborhood,
+        finalCity,
+        finalState,
+        finalNumber,
+        finalComplement,
+        finalPhone,
+        finalBirthDate,
+        finalSenha,
+        req.userId,
+      ]
+    );
+
+    res.json({
+      message: 'Perfil atualizado com sucesso.',
+      user: result.rows[0],
+    });
   } catch (error) {
     res.status(500).json({
-      message: 'Erro ao buscar usuários',
+      message: 'Erro ao atualizar perfil.',
       error: error.message,
     });
   }
+});
 
-  router.delete('/me', authMiddleware, async (req, res) => {
+// EXCLUIR CONTA DO USUÁRIO LOGADO
+router.delete('/me', authMiddleware, async (req, res) => {
   try {
     const result = await pool.query(
       'DELETE FROM users WHERE id = $1 RETURNING id, nome, email, tipo',
@@ -169,6 +287,21 @@ router.get('/', async (req, res) => {
     });
   }
 });
+
+// LISTAR USUÁRIOS
+router.get('/', async (req, res) => {
+  try {
+    const result = await pool.query(
+      'SELECT id, nome, email, tipo FROM users ORDER BY id ASC'
+    );
+
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({
+      message: 'Erro ao buscar usuários',
+      error: error.message,
+    });
+  }
 });
 
 module.exports = router;
