@@ -54,8 +54,11 @@ app.get('/create-users-table', async (req, res) => {
   }
 });
 
+const occurrencesRoutes = require('./routes/occurrences');
+app.use('/occurrences', occurrencesRoutes);
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
   console.log('Servidor rodando na porta ' + PORT);
 });
+
