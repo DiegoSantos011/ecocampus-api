@@ -56,6 +56,12 @@ app.get('/create-users-table', async (req, res) => {
   }
 });
 
+const rewardsRoutes = require('./routes/rewards');
+const redemptionsRoutes = require('./routes/redemptions');
+
+app.use('/rewards', rewardsRoutes);
+app.use('/redemptions', redemptionsRoutes);
+
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
