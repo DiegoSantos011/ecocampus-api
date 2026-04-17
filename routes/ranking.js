@@ -6,9 +6,9 @@ const authMiddleware = require('../middlewares/authMiddleware');
 router.get('/', authMiddleware, async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT id, nome, email, tipo, points
+      `SELECT id, nome, email, tipo, COALESCE(points, 0) AS points
        FROM users
-       ORDER BY points DESC, nome ASC`
+       ORDER BY COALESCE(points, 0) DESC, nome ASC`
     );
 
     res.json(result.rows);

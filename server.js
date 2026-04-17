@@ -62,6 +62,9 @@ const redemptionsRoutes = require('./routes/redemptions');
 app.use('/rewards', rewardsRoutes);
 app.use('/redemptions', redemptionsRoutes);
 
+const rankingRoutes = require('./routes/ranking');
+app.use('/ranking', rankingRoutes);
+
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
