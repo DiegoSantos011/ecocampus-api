@@ -23,7 +23,7 @@ function uploadBufferToCloudinary(buffer) {
   });
 }
 
-// CRIAR OCORRÊNCIA COM IMAGEM REAL
+// CRIAR OCORRÊNCIA
 router.post(
   '/',
   authMiddleware,
@@ -80,8 +80,81 @@ router.post(
         occurrence: result.rows[0],
       });
     } catch (error) {
+      console.log('ERRO AO CRIAR OCORRÊNCIA:', error);
+
       res.status(500).json({
         message: 'Erro ao criar ocorrência.',
+        error: error.message,
+      });
+    }
+  }
+);
+
+// EDITAR MINHA OCORRÊNCIA PENDENTE
+router.put(
+  '/:id',
+  authMiddleware,
+  upload.single('image'),
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { category, location, description, points } = req.body;
+
+      const occurrenceResult = await pool.query(
+        'SELECT * FROM occurrences WHERE id = $1 AND user_id = $2',
+        [id, req.userId]
+      );
+
+      if (occurrenceResult.rows.length === 0) {
+        return res.status(404).json({
+          message: 'Ocorrência não encontrada.',
+        });
+      }
+
+      const occurrence = occurrenceResult.rows[0];
+
+      if (occurrence.status !== 'Pendente') {
+        return res.status(400).json({
+          message: 'Só é possível editar ocorrências pendentes.',
+        });
+      }
+
+      let imageUrl = occurrence.image_uri || '';
+
+      if (req.file && req.file.buffer) {
+        const uploadedImage = await uploadBufferToCloudinary(req.file.buffer);
+        imageUrl = uploadedImage.secure_url;
+      }
+
+      const updatedResult = await pool.query(
+        `UPDATE occurrences
+         SET
+           category = $1,
+           location = $2,
+           description = $3,
+           image_uri = $4,
+           points = $5
+         WHERE id = $6
+         RETURNING *`,
+        [
+          category || occurrence.category,
+          location || occurrence.location,
+          description || occurrence.description,
+          imageUrl,
+          Number(points) || occurrence.points || 0,
+          id,
+        ]
+      );
+
+      res.json({
+        message: 'Ocorrência atualizada com sucesso.',
+        occurrence: updatedResult.rows[0],
+      });
+    } catch (error) {
+      console.log('ERRO AO EDITAR OCORRÊNCIA:', error);
+
+      res.status(500).json({
+        message: 'Erro ao editar ocorrência.',
         error: error.message,
       });
     }
@@ -107,6 +180,24 @@ router.get('/mine', authMiddleware, async (req, res) => {
   }
 });
 
+// LISTAR OCORRÊNCIAS PENDENTES
+router.get('/pending', authMiddleware, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT * FROM occurrences
+       WHERE status = 'Pendente'
+       ORDER BY created_at DESC`
+    );
+
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({
+      message: 'Erro ao buscar ocorrências pendentes.',
+      error: error.message,
+    });
+  }
+});
+
 // LISTAR TODAS AS OCORRÊNCIAS
 router.get('/', authMiddleware, async (req, res) => {
   try {
@@ -124,7 +215,7 @@ router.get('/', authMiddleware, async (req, res) => {
   }
 });
 
-// APROVAR OCORRÊNCIA E SOMAR PONTOS NO USUÁRIO
+// APROVAR OCORRÊNCIA
 router.patch('/:id/approve', authMiddleware, async (req, res) => {
   const client = await pool.connect();
 
