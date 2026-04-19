@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../db');
 const authMiddleware = require('../middlewares/authMiddleware');
+const adminMiddleware = require('../middlewares/adminMiddleware');
 
 // LISTAR MEUS RESGATES
 router.get('/mine', authMiddleware, async (req, res) => {
@@ -22,8 +23,8 @@ router.get('/mine', authMiddleware, async (req, res) => {
   }
 });
 
-// LISTAR TODOS OS RESGATES
-router.get('/', authMiddleware, async (req, res) => {
+// LISTAR TODOS OS RESGATES (SÓ ADMIN)
+router.get('/', authMiddleware, adminMiddleware, async (req, res) => {
   try {
     const result = await pool.query(
       'SELECT * FROM redemptions ORDER BY created_at DESC'
@@ -136,8 +137,8 @@ router.post('/', authMiddleware, async (req, res) => {
   }
 });
 
-// ATUALIZAR STATUS DO RESGATE
-router.patch('/:id', authMiddleware, async (req, res) => {
+// ATUALIZAR STATUS DO RESGATE (SÓ ADMIN)
+router.patch('/:id', authMiddleware, adminMiddleware, async (req, res) => {
   try {
     const { id } = req.params;
     const { status } = req.body;
