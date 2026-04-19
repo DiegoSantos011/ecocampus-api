@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../db');
 const authMiddleware = require('../middlewares/authMiddleware');
+const adminMiddleware = require('../middlewares/adminMiddleware');
 const upload = require('../middlewares/uploadMiddleware');
 const cloudinary = require('../config/cloudinary');
 const streamifier = require('streamifier');
@@ -180,8 +181,8 @@ router.get('/mine', authMiddleware, async (req, res) => {
   }
 });
 
-// LISTAR OCORRÊNCIAS PENDENTES
-router.get('/pending', authMiddleware, async (req, res) => {
+// LISTAR OCORRÊNCIAS PENDENTES (SÓ ADMIN)
+router.get('/pending', authMiddleware, adminMiddleware, async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT * FROM occurrences
@@ -198,8 +199,8 @@ router.get('/pending', authMiddleware, async (req, res) => {
   }
 });
 
-// LISTAR TODAS AS OCORRÊNCIAS
-router.get('/', authMiddleware, async (req, res) => {
+// LISTAR TODAS AS OCORRÊNCIAS (SÓ ADMIN)
+router.get('/', authMiddleware, adminMiddleware, async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT * FROM occurrences
@@ -215,8 +216,8 @@ router.get('/', authMiddleware, async (req, res) => {
   }
 });
 
-// APROVAR OCORRÊNCIA
-router.patch('/:id/approve', authMiddleware, async (req, res) => {
+// APROVAR OCORRÊNCIA (SÓ ADMIN)
+router.patch('/:id/approve', authMiddleware, adminMiddleware, async (req, res) => {
   const client = await pool.connect();
 
   try {
@@ -277,8 +278,8 @@ router.patch('/:id/approve', authMiddleware, async (req, res) => {
   }
 });
 
-// REJEITAR OCORRÊNCIA
-router.patch('/:id/reject', authMiddleware, async (req, res) => {
+// REJEITAR OCORRÊNCIA (SÓ ADMIN)
+router.patch('/:id/reject', authMiddleware, adminMiddleware, async (req, res) => {
   try {
     const { id } = req.params;
 
