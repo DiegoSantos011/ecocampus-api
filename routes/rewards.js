@@ -1,43 +1,38 @@
-const express = require('express');
-const router = express.Router();
-const pool = require('../db');
-const authMiddleware = require('../middlewares/authMiddleware');
+import { API_BASE_URL } from '../config/api';
 
-// LISTAR RECOMPENSAS
-router.get('/', authMiddleware, async (req, res) => {
-  try {
-    const result = await pool.query(
-      'SELECT * FROM rewards ORDER BY id DESC'
-    );
+export async function getRewardsApi(token) {
+  const response = await fetch(`${API_BASE_URL}/rewards`, {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+  });
 
-    res.json(result.rows);
-  } catch (error) {
-    res.status(500).json({
-      message: 'Erro ao buscar recompensas',
-      error: error.message,
-    });
+  const result = await response.json();
+
+  if (!response.ok) {
+    throw new Error(result.message || 'Erro ao buscar recompensas');
   }
-});
 
-// CRIAR RECOMPENSA (ADMIN)
-router.post('/', authMiddleware, async (req, res) => {
-  try {
-    const { name, cost, description, stock } = req.body;
+  return result;
+}
 
-    const result = await pool.query(
-      `INSERT INTO rewards (name, cost, description, stock)
-       VALUES ($1, $2, $3, $4)
-       RETURNING *`,
-      [name, cost, description, stock]
-    );
+export async function createRewardApi(token, data) {
+  const response = await fetch(`${API_BASE_URL}/rewards`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(data),
+  });
 
-    res.json(result.rows[0]);
-  } catch (error) {
-    res.status(500).json({
-      message: 'Erro ao criar recompensa',
-      error: error.message,
-    });
+  const result = await response.json();
+
+  if (!response.ok) {
+    throw new Error(result.message || 'Erro ao criar recompensa');
   }
-});
 
-module.exports = router;
+  return result;
+}
