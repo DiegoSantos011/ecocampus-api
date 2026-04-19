@@ -137,7 +137,7 @@ router.post('/', authMiddleware, async (req, res) => {
 });
 
 // ATUALIZAR STATUS DO RESGATE
-router.patch('/:id/status', authMiddleware, async (req, res) => {
+router.patch('/:id', authMiddleware, async (req, res) => {
   try {
     const { id } = req.params;
     const { status } = req.body;
