@@ -216,12 +216,19 @@ router.get('/', authMiddleware, adminMiddleware, async (req, res) => {
   }
 });
 
-// APROVAR OCORRÊNCIA (SÓ ADMIN)
+// APROVAR OCORRÊNCIA (SÓ ADMIN, COM PONTUAÇÃO DEFINIDA PELO ADMIN)
 router.patch('/:id/approve', authMiddleware, adminMiddleware, async (req, res) => {
   const client = await pool.connect();
 
   try {
     const { id } = req.params;
+    const { points } = req.body;
+
+    if (points === undefined || points === null || Number(points) < 0) {
+      return res.status(400).json({
+        message: 'Informe uma pontuação válida.',
+      });
+    }
 
     await client.query('BEGIN');
 
@@ -246,19 +253,23 @@ router.patch('/:id/approve', authMiddleware, adminMiddleware, async (req, res) =
       });
     }
 
+    const approvedPoints = Number(points);
+
     const updatedOccurrence = await client.query(
       `UPDATE occurrences
-       SET status = 'Aprovada', validated_at = CURRENT_TIMESTAMP
+       SET status = 'Aprovada',
+           validated_at = CURRENT_TIMESTAMP,
+           points = $2
        WHERE id = $1
        RETURNING *`,
-      [id]
+      [id, approvedPoints]
     );
 
     await client.query(
       `UPDATE users
        SET points = COALESCE(points, 0) + $1
        WHERE id = $2`,
-      [occurrence.points || 0, occurrence.user_id]
+      [approvedPoints, occurrence.user_id]
     );
 
     await client.query('COMMIT');
