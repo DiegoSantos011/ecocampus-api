@@ -1,38 +1,53 @@
-import { API_BASE_URL } from '../config/api';
+const express = require('express');
+const router = express.Router();
+const pool = require('../db');
+const authMiddleware = require('../middlewares/authMiddleware');
+const adminMiddleware = require('../middlewares/adminMiddleware');
 
-export async function getRewardsApi(token) {
-  const response = await fetch(`${API_BASE_URL}/rewards`, {
-    method: 'GET',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-    },
-  });
+// LISTAR RECOMPENSAS
+router.get('/', authMiddleware, async (req, res) => {
+  try {
+    const result = await pool.query(
+      'SELECT * FROM rewards ORDER BY id DESC'
+    );
 
-  const result = await response.json();
-
-  if (!response.ok) {
-    throw new Error(result.message || 'Erro ao buscar recompensas');
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({
+      message: 'Erro ao buscar recompensas.',
+      error: error.message,
+    });
   }
+});
 
-  return result;
-}
+// CRIAR RECOMPENSA (SÓ ADMIN)
+router.post('/', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const { name, cost, description, stock } = req.body;
 
-export async function createRewardApi(token, data) {
-  const response = await fetch(`${API_BASE_URL}/rewards`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify(data),
-  });
+    if (!name || !cost || !description || stock === undefined) {
+      return res.status(400).json({
+        message: 'Preencha nome, custo, descrição e estoque.',
+      });
+    }
 
-  const result = await response.json();
+    const result = await pool.query(
+      `INSERT INTO rewards (name, cost, description, stock)
+       VALUES ($1, $2, $3, $4)
+       RETURNING *`,
+      [name, cost, description, stock]
+    );
 
-  if (!response.ok) {
-    throw new Error(result.message || 'Erro ao criar recompensa');
+    res.json({
+      message: 'Recompensa cadastrada com sucesso.',
+      reward: result.rows[0],
+    });
+  } catch (error) {
+    res.status(500).json({
+      message: 'Erro ao criar recompensa.',
+      error: error.message,
+    });
   }
+});
 
-  return result;
-}
+module.exports = router;

@@ -8,7 +8,22 @@ const authMiddleware = require('../middlewares/authMiddleware');
 // CADASTRO
 router.post('/register', async (req, res) => {
   try {
-    const { nome, email, senha, tipo } = req.body;
+    const {
+      nome,
+      email,
+      senha,
+      tipo,
+      cpf,
+      cep,
+      street,
+      neighborhood,
+      city,
+      state,
+      number,
+      complement,
+      phone,
+      birthDate,
+    } = req.body;
 
     if (!nome || !email || !senha || !tipo) {
       return res.status(400).json({
@@ -30,8 +45,28 @@ router.post('/register', async (req, res) => {
     const senhaHash = await bcrypt.hash(senha, 10);
 
     const result = await pool.query(
-      'INSERT INTO users (nome, email, senha, tipo) VALUES ($1, $2, $3, $4) RETURNING id, nome, email, tipo',
-      [nome, email, senhaHash, tipo]
+      `INSERT INTO users
+        (nome, email, senha, tipo, cpf, cep, street, neighborhood, city, state, number, complement, phone, birth_date, points)
+       VALUES
+        ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+       RETURNING id, nome, email, tipo, cpf, cep, street, neighborhood, city, state, number, complement, phone, birth_date, points`,
+      [
+        nome,
+        email,
+        senhaHash,
+        tipo,
+        cpf || null,
+        cep || null,
+        street || null,
+        neighborhood || null,
+        city || null,
+        state || null,
+        number || null,
+        complement || null,
+        phone || null,
+        birthDate || null,
+        0,
+      ]
     );
 
     res.json({
@@ -113,7 +148,7 @@ router.get('/me', authMiddleware, async (req, res) => {
     const result = await pool.query(
       `SELECT 
         id, nome, email, tipo, cpf, cep, street, neighborhood, city, state,
-        number, complement, phone, birth_date
+        number, complement, phone, birth_date, points
        FROM users
        WHERE id = $1`,
       [req.userId]
@@ -231,7 +266,7 @@ router.put('/me', authMiddleware, async (req, res) => {
       WHERE id = $14
       RETURNING
         id, nome, email, tipo, cpf, cep, street, neighborhood, city, state,
-        number, complement, phone, birth_date`,
+        number, complement, phone, birth_date, points`,
       [
         finalNome,
         finalEmail,
@@ -292,7 +327,7 @@ router.delete('/me', authMiddleware, async (req, res) => {
 router.get('/', async (req, res) => {
   try {
     const result = await pool.query(
-      'SELECT id, nome, email, tipo FROM users ORDER BY id ASC'
+      'SELECT id, nome, email, tipo, points FROM users ORDER BY id ASC'
     );
 
     res.json(result.rows);

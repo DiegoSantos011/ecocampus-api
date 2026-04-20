@@ -269,6 +269,7 @@ router.patch('/:id/approve', authMiddleware, adminMiddleware, async (req, res) =
     });
   } catch (error) {
     await client.query('ROLLBACK');
+
     res.status(500).json({
       message: 'Erro ao aprovar ocorrência.',
       error: error.message,
