@@ -36,6 +36,7 @@ router.get('/active', authMiddleware, async (req, res) => {
        SET status = 'Expirado'
        WHERE user_id = $1
        AND status = 'Aprovado'
+       AND used_at IS NULL
        AND expires_at IS NOT NULL
        AND expires_at < CURRENT_TIMESTAMP`,
       [req.userId]
@@ -76,7 +77,7 @@ router.get('/', authMiddleware, adminMiddleware, async (req, res) => {
   }
 });
 
-// RESGATAR RECOMPENSA
+// SOLICITAR RESGATE
 router.post('/', authMiddleware, async (req, res) => {
   const client = await pool.connect();
 
@@ -118,14 +119,14 @@ router.post('/', authMiddleware, async (req, res) => {
     const user = userResult.rows[0];
     const reward = rewardResult.rows[0];
 
-    if (reward.stock <= 0) {
+    if (Number(reward.stock || 0) <= 0) {
       await client.query('ROLLBACK');
       return res.status(400).json({
         message: 'Essa recompensa está sem estoque.',
       });
     }
 
-    if ((user.points || 0) < reward.cost) {
+    if (Number(user.points || 0) < Number(reward.cost || 0)) {
       await client.query('ROLLBACK');
       return res.status(400).json({
         message: 'Você não possui pontos suficientes.',
@@ -228,7 +229,7 @@ router.patch('/:id', authMiddleware, adminMiddleware, async (req, res) => {
   }
 });
 
-// USAR RECOMPENSA
+// USAR / RESGATAR RECOMPENSA
 router.patch('/:id/use', authMiddleware, async (req, res) => {
   try {
     const { id } = req.params;
@@ -263,8 +264,8 @@ router.patch('/:id/use', authMiddleware, async (req, res) => {
       await pool.query(
         `UPDATE redemptions
          SET status = 'Expirado'
-         WHERE id = $1`,
-        [id]
+         WHERE id = $1 AND user_id = $2`,
+        [id, req.userId]
       );
 
       return res.status(400).json({
@@ -274,15 +275,15 @@ router.patch('/:id/use', authMiddleware, async (req, res) => {
 
     const result = await pool.query(
       `UPDATE redemptions
-       SET status = 'Utilizado',
+       SET status = 'Resgatado',
            used_at = CURRENT_TIMESTAMP
-       WHERE id = $1
+       WHERE id = $1 AND user_id = $2
        RETURNING *`,
-      [id]
+      [id, req.userId]
     );
 
     res.json({
-      message: 'Recompensa utilizada com sucesso.',
+      message: 'Recompensa resgatada com sucesso.',
       redemption: result.rows[0],
     });
   } catch (error) {
