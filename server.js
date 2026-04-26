@@ -14,6 +14,8 @@ app.use(express.json());
 app.use('/users', usersRoutes);
 app.use('/occurrences', occurrencesRoutes);
 
+app.use('/dashboard', dashboardRoutes);
+
 app.get('/', (req, res) => {
   res.send('API EcoCampus rodando 🚀');
 });
@@ -70,3 +72,5 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log('Servidor rodando na porta ' + PORT);
 });
+
+const dashboardRoutes = require('./routes/dashboard');
