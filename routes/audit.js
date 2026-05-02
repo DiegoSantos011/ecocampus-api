@@ -12,8 +12,6 @@ router.get('/', authMiddleware, adminMiddleware, async (req, res) => {
         audit_logs.user_id,
         users.nome AS user_name,
         audit_logs.action,
-        audit_logs.entity,
-        audit_logs.entity_id,
         audit_logs.description,
         audit_logs.created_at
        FROM audit_logs
