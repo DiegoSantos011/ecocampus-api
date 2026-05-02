@@ -3,6 +3,7 @@ const router = express.Router();
 const pool = require('../db');
 const authMiddleware = require('../middlewares/authMiddleware');
 const adminMiddleware = require('../middlewares/adminMiddleware');
+const { logAudit } = require('../utils/audit');
 
 function generateRedemptionCode() {
   const random = Math.floor(1000 + Math.random() * 9000);
@@ -61,11 +62,12 @@ router.get('/active', authMiddleware, async (req, res) => {
   }
 });
 
-// LISTAR TODOS OS RESGATES — SÓ ADMIN
+// LISTAR TODOS OS RESGATES — ADMIN
 router.get('/', authMiddleware, adminMiddleware, async (req, res) => {
   try {
     const result = await pool.query(
-      'SELECT * FROM redemptions ORDER BY created_at DESC'
+      `SELECT * FROM redemptions
+       ORDER BY created_at DESC`
     );
 
     res.json(result.rows);
@@ -160,12 +162,21 @@ router.post('/', authMiddleware, async (req, res) => {
 
     await client.query('COMMIT');
 
+    await logAudit({
+      userId: req.userId,
+      action: 'REQUEST_REDEMPTION',
+      entity: 'redemptions',
+      entityId: redemptionResult.rows[0].id,
+      description: `Usuário solicitou resgate da recompensa ${reward.name}.`,
+    });
+
     res.json({
       message: 'Resgate solicitado com sucesso.',
       redemption: redemptionResult.rows[0],
     });
   } catch (error) {
     await client.query('ROLLBACK');
+
     res.status(500).json({
       message: 'Erro ao resgatar recompensa.',
       error: error.message,
@@ -175,7 +186,7 @@ router.post('/', authMiddleware, async (req, res) => {
   }
 });
 
-// ATUALIZAR STATUS DO RESGATE — SÓ ADMIN
+// ATUALIZAR STATUS DO RESGATE — ADMIN
 router.patch('/:id', authMiddleware, adminMiddleware, async (req, res) => {
   try {
     const { id } = req.params;
@@ -216,6 +227,14 @@ router.patch('/:id', authMiddleware, adminMiddleware, async (req, res) => {
         message: 'Resgate não encontrado.',
       });
     }
+
+    await logAudit({
+      userId: req.userId,
+      action: 'UPDATE_REDEMPTION_STATUS',
+      entity: 'redemptions',
+      entityId: Number(id),
+      description: `Admin alterou status do resgate ${id} para ${status}.`,
+    });
 
     res.json({
       message: 'Status do resgate atualizado com sucesso.',
@@ -281,6 +300,14 @@ router.patch('/:id/use', authMiddleware, async (req, res) => {
        RETURNING *`,
       [id, req.userId]
     );
+
+    await logAudit({
+      userId: req.userId,
+      action: 'USE_REWARD',
+      entity: 'redemptions',
+      entityId: Number(id),
+      description: `Usuário utilizou a recompensa ${redemption.reward_name}.`,
+    });
 
     res.json({
       message: 'Recompensa resgatada com sucesso.',

@@ -6,6 +6,7 @@ const adminMiddleware = require('../middlewares/adminMiddleware');
 const upload = require('../middlewares/uploadMiddleware');
 const cloudinary = require('../config/cloudinary');
 const streamifier = require('streamifier');
+const { logAudit } = require('../utils/audit');
 
 function uploadBufferToCloudinary(buffer) {
   return new Promise((resolve, reject) => {
@@ -25,142 +26,144 @@ function uploadBufferToCloudinary(buffer) {
 }
 
 // CRIAR OCORRÊNCIA
-router.post(
-  '/',
-  authMiddleware,
-  upload.single('image'),
-  async (req, res) => {
-    try {
-      const { category, location, description, points } = req.body;
+router.post('/', authMiddleware, upload.single('image'), async (req, res) => {
+  try {
+    const { category, location, description, points } = req.body;
 
-      if (!category || !location || !description) {
-        return res.status(400).json({
-          message: 'Informe categoria, local e descrição.',
-        });
-      }
-
-      const userResult = await pool.query(
-        'SELECT id, nome FROM users WHERE id = $1',
-        [req.userId]
-      );
-
-      if (userResult.rows.length === 0) {
-        return res.status(404).json({
-          message: 'Usuário não encontrado.',
-        });
-      }
-
-      const user = userResult.rows[0];
-
-      let imageUrl = '';
-
-      if (req.file && req.file.buffer) {
-        const uploadedImage = await uploadBufferToCloudinary(req.file.buffer);
-        imageUrl = uploadedImage.secure_url;
-      }
-
-      const result = await pool.query(
-        `INSERT INTO occurrences
-          (user_id, user_name, category, location, description, image_uri, points, status)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-         RETURNING *`,
-        [
-          user.id,
-          user.nome,
-          category,
-          location,
-          description,
-          imageUrl,
-          Number(points) || 0,
-          'Pendente',
-        ]
-      );
-
-      res.json({
-        message: 'Ocorrência registrada com sucesso.',
-        occurrence: result.rows[0],
-      });
-    } catch (error) {
-      console.log('ERRO AO CRIAR OCORRÊNCIA:', error);
-
-      res.status(500).json({
-        message: 'Erro ao criar ocorrência.',
-        error: error.message,
+    if (!category || !location || !description) {
+      return res.status(400).json({
+        message: 'Informe categoria, local e descrição.',
       });
     }
+
+    const userResult = await pool.query(
+      'SELECT id, nome FROM users WHERE id = $1',
+      [req.userId]
+    );
+
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({
+        message: 'Usuário não encontrado.',
+      });
+    }
+
+    const user = userResult.rows[0];
+
+    let imageUrl = '';
+
+    if (req.file && req.file.buffer) {
+      const uploadedImage = await uploadBufferToCloudinary(req.file.buffer);
+      imageUrl = uploadedImage.secure_url;
+    }
+
+    const result = await pool.query(
+      `INSERT INTO occurrences
+        (user_id, user_name, category, location, description, image_uri, points, status)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING *`,
+      [
+        user.id,
+        user.nome,
+        category,
+        location,
+        description,
+        imageUrl,
+        Number(points) || 0,
+        'Pendente',
+      ]
+    );
+
+    await logAudit({
+      userId: req.userId,
+      action: 'CREATE_OCCURRENCE',
+      entity: 'occurrences',
+      entityId: result.rows[0].id,
+      description: `Usuário criou ocorrência de categoria ${category}.`,
+    });
+
+    res.json({
+      message: 'Ocorrência registrada com sucesso.',
+      occurrence: result.rows[0],
+    });
+  } catch (error) {
+    res.status(500).json({
+      message: 'Erro ao criar ocorrência.',
+      error: error.message,
+    });
   }
-);
+});
 
 // EDITAR MINHA OCORRÊNCIA PENDENTE
-router.put(
-  '/:id',
-  authMiddleware,
-  upload.single('image'),
-  async (req, res) => {
-    try {
-      const { id } = req.params;
-      const { category, location, description, points } = req.body;
+router.put('/:id', authMiddleware, upload.single('image'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { category, location, description, points } = req.body;
 
-      const occurrenceResult = await pool.query(
-        'SELECT * FROM occurrences WHERE id = $1 AND user_id = $2',
-        [id, req.userId]
-      );
+    const occurrenceResult = await pool.query(
+      'SELECT * FROM occurrences WHERE id = $1 AND user_id = $2',
+      [id, req.userId]
+    );
 
-      if (occurrenceResult.rows.length === 0) {
-        return res.status(404).json({
-          message: 'Ocorrência não encontrada.',
-        });
-      }
-
-      const occurrence = occurrenceResult.rows[0];
-
-      if (occurrence.status !== 'Pendente') {
-        return res.status(400).json({
-          message: 'Só é possível editar ocorrências pendentes.',
-        });
-      }
-
-      let imageUrl = occurrence.image_uri || '';
-
-      if (req.file && req.file.buffer) {
-        const uploadedImage = await uploadBufferToCloudinary(req.file.buffer);
-        imageUrl = uploadedImage.secure_url;
-      }
-
-      const updatedResult = await pool.query(
-        `UPDATE occurrences
-         SET
-           category = $1,
-           location = $2,
-           description = $3,
-           image_uri = $4,
-           points = $5
-         WHERE id = $6
-         RETURNING *`,
-        [
-          category || occurrence.category,
-          location || occurrence.location,
-          description || occurrence.description,
-          imageUrl,
-          Number(points) || occurrence.points || 0,
-          id,
-        ]
-      );
-
-      res.json({
-        message: 'Ocorrência atualizada com sucesso.',
-        occurrence: updatedResult.rows[0],
-      });
-    } catch (error) {
-      console.log('ERRO AO EDITAR OCORRÊNCIA:', error);
-
-      res.status(500).json({
-        message: 'Erro ao editar ocorrência.',
-        error: error.message,
+    if (occurrenceResult.rows.length === 0) {
+      return res.status(404).json({
+        message: 'Ocorrência não encontrada.',
       });
     }
+
+    const occurrence = occurrenceResult.rows[0];
+
+    if (occurrence.status !== 'Pendente') {
+      return res.status(400).json({
+        message: 'Só é possível editar ocorrências pendentes.',
+      });
+    }
+
+    let imageUrl = occurrence.image_uri || '';
+
+    if (req.file && req.file.buffer) {
+      const uploadedImage = await uploadBufferToCloudinary(req.file.buffer);
+      imageUrl = uploadedImage.secure_url;
+    }
+
+    const updatedResult = await pool.query(
+      `UPDATE occurrences
+       SET
+         category = $1,
+         location = $2,
+         description = $3,
+         image_uri = $4,
+         points = $5
+       WHERE id = $6
+       RETURNING *`,
+      [
+        category || occurrence.category,
+        location || occurrence.location,
+        description || occurrence.description,
+        imageUrl,
+        Number(points) || occurrence.points || 0,
+        id,
+      ]
+    );
+
+    await logAudit({
+      userId: req.userId,
+      action: 'UPDATE_OCCURRENCE',
+      entity: 'occurrences',
+      entityId: Number(id),
+      description: `Usuário editou ocorrência ${id}.`,
+    });
+
+    res.json({
+      message: 'Ocorrência atualizada com sucesso.',
+      occurrence: updatedResult.rows[0],
+    });
+  } catch (error) {
+    res.status(500).json({
+      message: 'Erro ao editar ocorrência.',
+      error: error.message,
+    });
   }
-);
+});
 
 // LISTAR MINHAS OCORRÊNCIAS
 router.get('/mine', authMiddleware, async (req, res) => {
@@ -181,7 +184,7 @@ router.get('/mine', authMiddleware, async (req, res) => {
   }
 });
 
-// LISTAR OCORRÊNCIAS PENDENTES (SÓ ADMIN)
+// LISTAR OCORRÊNCIAS PENDENTES
 router.get('/pending', authMiddleware, adminMiddleware, async (req, res) => {
   try {
     const result = await pool.query(
@@ -199,7 +202,7 @@ router.get('/pending', authMiddleware, adminMiddleware, async (req, res) => {
   }
 });
 
-// LISTAR TODAS AS OCORRÊNCIAS (SÓ ADMIN)
+// LISTAR TODAS AS OCORRÊNCIAS
 router.get('/', authMiddleware, adminMiddleware, async (req, res) => {
   try {
     const result = await pool.query(
@@ -216,7 +219,7 @@ router.get('/', authMiddleware, adminMiddleware, async (req, res) => {
   }
 });
 
-// APROVAR OCORRÊNCIA (SÓ ADMIN, COM PONTUAÇÃO DEFINIDA PELO ADMIN)
+// APROVAR OCORRÊNCIA
 router.patch('/:id/approve', authMiddleware, adminMiddleware, async (req, res) => {
   const client = await pool.connect();
 
@@ -274,6 +277,14 @@ router.patch('/:id/approve', authMiddleware, adminMiddleware, async (req, res) =
 
     await client.query('COMMIT');
 
+    await logAudit({
+      userId: req.userId,
+      action: 'APPROVE_OCCURRENCE',
+      entity: 'occurrences',
+      entityId: Number(id),
+      description: `Admin aprovou ocorrência ${id} com ${approvedPoints} pontos.`,
+    });
+
     res.json({
       message: 'Ocorrência aprovada com sucesso.',
       occurrence: updatedOccurrence.rows[0],
@@ -290,7 +301,7 @@ router.patch('/:id/approve', authMiddleware, adminMiddleware, async (req, res) =
   }
 });
 
-// REJEITAR OCORRÊNCIA (SÓ ADMIN)
+// REJEITAR OCORRÊNCIA
 router.patch('/:id/reject', authMiddleware, adminMiddleware, async (req, res) => {
   try {
     const { id } = req.params;
@@ -316,11 +327,20 @@ router.patch('/:id/reject', authMiddleware, adminMiddleware, async (req, res) =>
 
     const updatedOccurrence = await pool.query(
       `UPDATE occurrences
-       SET status = 'Rejeitada', validated_at = CURRENT_TIMESTAMP
+       SET status = 'Rejeitada',
+           validated_at = CURRENT_TIMESTAMP
        WHERE id = $1
        RETURNING *`,
       [id]
     );
+
+    await logAudit({
+      userId: req.userId,
+      action: 'REJECT_OCCURRENCE',
+      entity: 'occurrences',
+      entityId: Number(id),
+      description: `Admin rejeitou ocorrência ${id}.`,
+    });
 
     res.json({
       message: 'Ocorrência rejeitada com sucesso.',

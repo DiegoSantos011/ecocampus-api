@@ -4,6 +4,7 @@ const pool = require('../db');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const authMiddleware = require('../middlewares/authMiddleware');
+const { logAudit } = require('../utils/audit');
 
 // CADASTRO
 router.post('/register', async (req, res) => {
@@ -68,6 +69,14 @@ router.post('/register', async (req, res) => {
         0,
       ]
     );
+
+  await logAudit({
+  userId: user.id,
+  action: 'LOGIN',
+  entity: 'users',
+  entityId: user.id,
+  description: `Usuário ${user.email} realizou login.`,
+});
 
     res.json({
       message: 'Usuário criado com sucesso',
