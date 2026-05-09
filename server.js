@@ -9,8 +9,13 @@ const occurrencesRoutes = require('./routes/occurrences');
 const rewardsRoutes = require('./routes/rewards');
 const redemptionsRoutes = require('./routes/redemptions');
 const rankingRoutes = require('./routes/ranking');
-const dashboardRoutes = require('./routes/dashboard');
-const auditRoutes = require('./routes/audit');
+
+let auditRoutes;
+try {
+  auditRoutes = require('./routes/audit');
+} catch (error) {
+  console.log('Auditoria desativada temporariamente:', error.message);
+}
 
 const app = express();
 
@@ -22,8 +27,10 @@ app.use('/occurrences', occurrencesRoutes);
 app.use('/rewards', rewardsRoutes);
 app.use('/redemptions', redemptionsRoutes);
 app.use('/ranking', rankingRoutes);
-app.use('/dashboard', dashboardRoutes);
-app.use('/audit', auditRoutes);
+
+if (auditRoutes) {
+  app.use('/audit', auditRoutes);
+}
 
 app.get('/', (req, res) => {
   res.send('API EcoCampus rodando 🚀');

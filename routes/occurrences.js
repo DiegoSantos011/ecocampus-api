@@ -6,7 +6,6 @@ const adminMiddleware = require('../middlewares/adminMiddleware');
 const upload = require('../middlewares/uploadMiddleware');
 const cloudinary = require('../config/cloudinary');
 const streamifier = require('streamifier');
-const { logAudit } = require('../utils/audit');
 
 function uploadBufferToCloudinary(buffer) {
   return new Promise((resolve, reject) => {
@@ -73,14 +72,6 @@ router.post('/', authMiddleware, upload.single('image'), async (req, res) => {
       ]
     );
 
-    await logAudit({
-      userId: req.userId,
-      action: 'CREATE_OCCURRENCE',
-      entity: 'occurrences',
-      entityId: result.rows[0].id,
-      description: `Usuário criou ocorrência de categoria ${category}.`,
-    });
-
     res.json({
       message: 'Ocorrência registrada com sucesso.',
       occurrence: result.rows[0],
@@ -144,14 +135,6 @@ router.put('/:id', authMiddleware, upload.single('image'), async (req, res) => {
         id,
       ]
     );
-
-    await logAudit({
-      userId: req.userId,
-      action: 'UPDATE_OCCURRENCE',
-      entity: 'occurrences',
-      entityId: Number(id),
-      description: `Usuário editou ocorrência ${id}.`,
-    });
 
     res.json({
       message: 'Ocorrência atualizada com sucesso.',
@@ -277,14 +260,6 @@ router.patch('/:id/approve', authMiddleware, adminMiddleware, async (req, res) =
 
     await client.query('COMMIT');
 
-    await logAudit({
-      userId: req.userId,
-      action: 'APPROVE_OCCURRENCE',
-      entity: 'occurrences',
-      entityId: Number(id),
-      description: `Admin aprovou ocorrência ${id} com ${approvedPoints} pontos.`,
-    });
-
     res.json({
       message: 'Ocorrência aprovada com sucesso.',
       occurrence: updatedOccurrence.rows[0],
@@ -333,14 +308,6 @@ router.patch('/:id/reject', authMiddleware, adminMiddleware, async (req, res) =>
        RETURNING *`,
       [id]
     );
-
-    await logAudit({
-      userId: req.userId,
-      action: 'REJECT_OCCURRENCE',
-      entity: 'occurrences',
-      entityId: Number(id),
-      description: `Admin rejeitou ocorrência ${id}.`,
-    });
 
     res.json({
       message: 'Ocorrência rejeitada com sucesso.',

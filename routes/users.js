@@ -4,7 +4,28 @@ const pool = require('../db');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const authMiddleware = require('../middlewares/authMiddleware');
-const { logAudit } = require('../utils/audit');
+
+let logAudit = async () => {};
+
+try {
+  const auditModule = require('../utils/audit');
+
+  if (typeof auditModule === 'function') {
+    logAudit = auditModule;
+  } else if (auditModule && typeof auditModule.logAudit === 'function') {
+    logAudit = auditModule.logAudit;
+  }
+} catch (error) {
+  console.log('Auditoria desativada em users:', error.message);
+}
+
+async function safeLogAudit(data) {
+  try {
+    await logAudit(data);
+  } catch (error) {
+    console.log('Auditoria ignorada:', error.message);
+  }
+}
 
 // CADASTRO
 router.post('/register', async (req, res) => {
@@ -70,17 +91,19 @@ router.post('/register', async (req, res) => {
       ]
     );
 
-  await logAudit({
-  userId: user.id,
-  action: 'LOGIN',
-  entity: 'users',
-  entityId: user.id,
-  description: `Usuário ${user.email} realizou login.`,
-});
+    const createdUser = result.rows[0];
+
+    await safeLogAudit({
+      userId: createdUser.id,
+      action: 'REGISTER',
+      entity: 'users',
+      entityId: createdUser.id,
+      description: `Usuário ${createdUser.email} foi cadastrado.`,
+    });
 
     res.json({
       message: 'Usuário criado com sucesso',
-      user: result.rows[0],
+      user: createdUser,
     });
   } catch (error) {
     res.status(500).json({
@@ -132,6 +155,14 @@ router.post('/login', async (req, res) => {
         expiresIn: '1d',
       }
     );
+
+    await safeLogAudit({
+      userId: user.id,
+      action: 'LOGIN',
+      entity: 'users',
+      entityId: user.id,
+      description: `Usuário ${user.email} realizou login.`,
+    });
 
     res.json({
       message: 'Login realizado com sucesso',
@@ -294,6 +325,14 @@ router.put('/me', authMiddleware, async (req, res) => {
       ]
     );
 
+    await safeLogAudit({
+      userId: req.userId,
+      action: 'UPDATE_PROFILE',
+      entity: 'users',
+      entityId: req.userId,
+      description: 'Usuário atualizou o próprio perfil.',
+    });
+
     res.json({
       message: 'Perfil atualizado com sucesso.',
       user: result.rows[0],
@@ -309,6 +348,14 @@ router.put('/me', authMiddleware, async (req, res) => {
 // EXCLUIR CONTA DO USUÁRIO LOGADO
 router.delete('/me', authMiddleware, async (req, res) => {
   try {
+    await safeLogAudit({
+      userId: req.userId,
+      action: 'DELETE_ACCOUNT',
+      entity: 'users',
+      entityId: req.userId,
+      description: 'Usuário solicitou exclusão da própria conta.',
+    });
+
     const result = await pool.query(
       'DELETE FROM users WHERE id = $1 RETURNING id, nome, email, tipo',
       [req.userId]

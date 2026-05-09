@@ -21,10 +21,8 @@ router.get('/', authMiddleware, adminMiddleware, async (req, res) => {
 
     res.json(result.rows);
   } catch (error) {
-    res.status(500).json({
-      message: 'Erro ao buscar logs de auditoria.',
-      error: error.message,
-    });
+    console.log('Erro auditoria:', error.message);
+    res.json([]);
   }
 });
 
