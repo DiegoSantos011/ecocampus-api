@@ -7,6 +7,28 @@ const upload = require('../middlewares/uploadMiddleware');
 const cloudinary = require('../config/cloudinary');
 const streamifier = require('streamifier');
 
+let logAudit = async () => {};
+
+try {
+  const auditModule = require('../utils/audit');
+
+  if (typeof auditModule === 'function') {
+    logAudit = auditModule;
+  } else if (auditModule && typeof auditModule.logAudit === 'function') {
+    logAudit = auditModule.logAudit;
+  }
+} catch (error) {
+  console.log('Auditoria desativada em occurrences:', error.message);
+}
+
+async function safeLogAudit(data) {
+  try {
+    await logAudit(data);
+  } catch (error) {
+    console.log('Auditoria ignorada:', error.message);
+  }
+}
+
 function uploadBufferToCloudinary(buffer) {
   return new Promise((resolve, reject) => {
     const stream = cloudinary.uploader.upload_stream(
@@ -72,6 +94,14 @@ router.post('/', authMiddleware, upload.single('image'), async (req, res) => {
       ]
     );
 
+    await safeLogAudit({
+      userId: req.userId,
+      action: 'CREATE_OCCURRENCE',
+      entity: 'occurrences',
+      entityId: result.rows[0].id,
+      description: `Usuário criou ocorrência de categoria ${category}.`,
+    });
+
     res.json({
       message: 'Ocorrência registrada com sucesso.',
       occurrence: result.rows[0],
@@ -135,6 +165,14 @@ router.put('/:id', authMiddleware, upload.single('image'), async (req, res) => {
         id,
       ]
     );
+
+    await safeLogAudit({
+      userId: req.userId,
+      action: 'UPDATE_OCCURRENCE',
+      entity: 'occurrences',
+      entityId: Number(id),
+      description: `Usuário editou ocorrência ${id}.`,
+    });
 
     res.json({
       message: 'Ocorrência atualizada com sucesso.',
@@ -260,6 +298,14 @@ router.patch('/:id/approve', authMiddleware, adminMiddleware, async (req, res) =
 
     await client.query('COMMIT');
 
+    await safeLogAudit({
+      userId: req.userId,
+      action: 'APPROVE_OCCURRENCE',
+      entity: 'occurrences',
+      entityId: Number(id),
+      description: `Admin aprovou ocorrência ${id} com ${approvedPoints} pontos.`,
+    });
+
     res.json({
       message: 'Ocorrência aprovada com sucesso.',
       occurrence: updatedOccurrence.rows[0],
@@ -308,6 +354,14 @@ router.patch('/:id/reject', authMiddleware, adminMiddleware, async (req, res) =>
        RETURNING *`,
       [id]
     );
+
+    await safeLogAudit({
+      userId: req.userId,
+      action: 'REJECT_OCCURRENCE',
+      entity: 'occurrences',
+      entityId: Number(id),
+      description: `Admin rejeitou ocorrência ${id}.`,
+    });
 
     res.json({
       message: 'Ocorrência rejeitada com sucesso.',

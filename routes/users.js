@@ -27,6 +27,68 @@ async function safeLogAudit(data) {
   }
 }
 
+function normalizeText(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+}
+
+function normalizeDate(value) {
+  if (!value) return '';
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return normalizeText(value);
+  }
+
+  const day = String(date.getUTCDate()).padStart(2, '0');
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const year = date.getUTCFullYear();
+
+  return `${day}/${month}/${year}`;
+}
+
+function getRecoveryQuestions(user) {
+  const questions = [];
+
+  if (user.birth_date) {
+    questions.push({
+      field: 'birth_date',
+      question: 'Qual é a sua data de nascimento cadastrada? Use o formato DD/MM/AAAA.',
+      answer: normalizeDate(user.birth_date),
+    });
+  }
+
+  if (user.city) {
+    questions.push({
+      field: 'city',
+      question: 'Qual é a cidade cadastrada no seu perfil?',
+      answer: normalizeText(user.city),
+    });
+  }
+
+  if (user.phone) {
+    questions.push({
+      field: 'phone',
+      question: 'Qual é o telefone cadastrado no seu perfil?',
+      answer: String(user.phone).replace(/\D/g, ''),
+    });
+  }
+
+  if (user.cep) {
+    questions.push({
+      field: 'cep',
+      question: 'Qual é o CEP cadastrado no seu perfil?',
+      answer: String(user.cep).replace(/\D/g, ''),
+    });
+  }
+
+  return questions;
+}
+
 // CADASTRO
 router.post('/register', async (req, res) => {
   try {
@@ -177,6 +239,153 @@ router.post('/login', async (req, res) => {
   } catch (error) {
     res.status(500).json({
       message: 'Erro ao fazer login',
+      error: error.message,
+    });
+  }
+});
+
+// BUSCAR PERGUNTA DE RECUPERAÇÃO
+router.post('/recovery-question', async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({
+        message: 'Informe o e-mail cadastrado.',
+      });
+    }
+
+    const result = await pool.query(
+      `SELECT id, email, birth_date, city, phone, cep
+       FROM users
+       WHERE email = $1`,
+      [email]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        message: 'Usuário não encontrado.',
+      });
+    }
+
+    const user = result.rows[0];
+    const questions = getRecoveryQuestions(user);
+
+    if (questions.length === 0) {
+      return res.status(400).json({
+        message: 'Não há dados suficientes para recuperar a senha desta conta.',
+      });
+    }
+
+    const selectedQuestion = questions[Math.floor(Math.random() * questions.length)];
+
+    await safeLogAudit({
+      userId: user.id,
+      action: 'PASSWORD_RECOVERY_QUESTION',
+      entity: 'users',
+      entityId: user.id,
+      description: `Sistema gerou pergunta de recuperação para ${user.email}.`,
+    });
+
+    res.json({
+      message: 'Pergunta de recuperação gerada com sucesso.',
+      email: user.email,
+      question: selectedQuestion.question,
+      field: selectedQuestion.field,
+    });
+  } catch (error) {
+    res.status(500).json({
+      message: 'Erro ao gerar pergunta de recuperação.',
+      error: error.message,
+    });
+  }
+});
+
+// REDEFINIR SENHA COM RESPOSTA
+router.post('/reset-password-by-answer', async (req, res) => {
+  try {
+    const { email, field, answer, newPassword } = req.body;
+
+    if (!email || !field || !answer || !newPassword) {
+      return res.status(400).json({
+        message: 'Informe e-mail, pergunta, resposta e nova senha.',
+      });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({
+        message: 'A nova senha deve ter pelo menos 6 caracteres.',
+      });
+    }
+
+    const result = await pool.query(
+      `SELECT id, email, birth_date, city, phone, cep
+       FROM users
+       WHERE email = $1`,
+      [email]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        message: 'Usuário não encontrado.',
+      });
+    }
+
+    const user = result.rows[0];
+    const questions = getRecoveryQuestions(user);
+    const selectedQuestion = questions.find((item) => item.field === field);
+
+    if (!selectedQuestion) {
+      return res.status(400).json({
+        message: 'Pergunta de recuperação inválida.',
+      });
+    }
+
+    let normalizedAnswer = '';
+
+    if (field === 'birth_date') {
+      normalizedAnswer = normalizeDate(answer);
+    } else if (field === 'phone' || field === 'cep') {
+      normalizedAnswer = String(answer).replace(/\D/g, '');
+    } else {
+      normalizedAnswer = normalizeText(answer);
+    }
+
+    if (normalizedAnswer !== selectedQuestion.answer) {
+      await safeLogAudit({
+        userId: user.id,
+        action: 'PASSWORD_RECOVERY_FAILED',
+        entity: 'users',
+        entityId: user.id,
+        description: `Tentativa incorreta de recuperação de senha para ${user.email}.`,
+      });
+
+      return res.status(401).json({
+        message: 'Resposta incorreta. Tente novamente.',
+      });
+    }
+
+    const senhaHash = await bcrypt.hash(newPassword, 10);
+
+    await pool.query(
+      'UPDATE users SET senha = $1 WHERE id = $2',
+      [senhaHash, user.id]
+    );
+
+    await safeLogAudit({
+      userId: user.id,
+      action: 'PASSWORD_RESET',
+      entity: 'users',
+      entityId: user.id,
+      description: `Usuário ${user.email} redefiniu a própria senha.`,
+    });
+
+    res.json({
+      message: 'Senha redefinida com sucesso. Faça login novamente.',
+    });
+  } catch (error) {
+    res.status(500).json({
+      message: 'Erro ao redefinir senha.',
       error: error.message,
     });
   }
@@ -380,7 +589,7 @@ router.delete('/me', authMiddleware, async (req, res) => {
 });
 
 // LISTAR USUÁRIOS
-router.get('/', async (req, res) => {
+router.get('/', authMiddleware, async (req, res) => {
   try {
     const result = await pool.query(
       'SELECT id, nome, email, tipo, points FROM users ORDER BY id ASC'

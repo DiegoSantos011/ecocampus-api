@@ -3,7 +3,28 @@ const router = express.Router();
 const pool = require('../db');
 const authMiddleware = require('../middlewares/authMiddleware');
 const adminMiddleware = require('../middlewares/adminMiddleware');
-const { logAudit } = require('../utils/audit');
+
+let logAudit = async () => {};
+
+try {
+  const auditModule = require('../utils/audit');
+
+  if (typeof auditModule === 'function') {
+    logAudit = auditModule;
+  } else if (auditModule && typeof auditModule.logAudit === 'function') {
+    logAudit = auditModule.logAudit;
+  }
+} catch (error) {
+  console.log('Auditoria desativada em redemptions:', error.message);
+}
+
+async function safeLogAudit(data) {
+  try {
+    await logAudit(data);
+  } catch (error) {
+    console.log('Auditoria ignorada:', error.message);
+  }
+}
 
 function generateRedemptionCode() {
   const random = Math.floor(1000 + Math.random() * 9000);
@@ -162,7 +183,7 @@ router.post('/', authMiddleware, async (req, res) => {
 
     await client.query('COMMIT');
 
-    await logAudit({
+    await safeLogAudit({
       userId: req.userId,
       action: 'REQUEST_REDEMPTION',
       entity: 'redemptions',
@@ -228,7 +249,7 @@ router.patch('/:id', authMiddleware, adminMiddleware, async (req, res) => {
       });
     }
 
-    await logAudit({
+    await safeLogAudit({
       userId: req.userId,
       action: 'UPDATE_REDEMPTION_STATUS',
       entity: 'redemptions',
@@ -287,6 +308,14 @@ router.patch('/:id/use', authMiddleware, async (req, res) => {
         [id, req.userId]
       );
 
+      await safeLogAudit({
+        userId: req.userId,
+        action: 'EXPIRE_REWARD',
+        entity: 'redemptions',
+        entityId: Number(id),
+        description: `A recompensa ${redemption.reward_name} expirou.`,
+      });
+
       return res.status(400).json({
         message: 'Esta recompensa expirou.',
       });
@@ -301,7 +330,7 @@ router.patch('/:id/use', authMiddleware, async (req, res) => {
       [id, req.userId]
     );
 
-    await logAudit({
+    await safeLogAudit({
       userId: req.userId,
       action: 'USE_REWARD',
       entity: 'redemptions',
